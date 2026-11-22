@@ -85,7 +85,6 @@ if __name__ == "__main__":
     for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
         tile_index = row.ID
         lines = row.coords
-        lines = [[(int(pt[0]), int(pt[1])) for pt in line] for line in lines]
         shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
         graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
         with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
