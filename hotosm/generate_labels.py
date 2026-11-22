@@ -7,7 +7,7 @@ import cv2
 import json
 
 
-IMAGE_SIZE = 400
+IMAGE_SIZE = 256
 KEYPOINT_RADIUS = 3
 ROAD_WIDTH = 3
 output_dir = './processed'
