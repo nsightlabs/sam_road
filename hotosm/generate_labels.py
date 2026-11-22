@@ -5,6 +5,7 @@ import pickle
 import networkx as nx
 import cv2
 import json
+from tqdm import tqdm
 
 
 IMAGE_SIZE = 256
@@ -76,9 +77,9 @@ create_directory(output_dir,delete=True)
 with open('data_split.json','r') as jf:
     data_list = json.load(jf)
     data_list = data_list['test'] + data_list['validation'] + data_list['train']
-for data_index, tile_index in enumerate(data_list):
+for data_index, tile_index in tqdm(enumerate(data_list), total=len(data_list), desc="Processing tiles"):
     # tile index is something like AOI_2_Vegas_505
-    print(f'Processing cityscale tile {tile_index}.')
+    # print(f'Processing cityscale tile {tile_index}.')
     vertices = []
     edges = []
     vertex_flag = True
