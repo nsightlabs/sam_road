@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import pickle
 import pandas as pd
@@ -8,6 +9,7 @@ from shapely import wkt as shapely_wkt
 from collections import defaultdict
 from shapely.geometry import MultiLineString
 from shapely.ops import unary_union
+from sklearn.model_selection import train_test_split
 
 
 def lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True):
@@ -74,12 +76,21 @@ def lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True):
                     graph[cur].append(n)
     return {k: sorted(v) for k, v in graph.items()}
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     IMAGE_DIR = Path("/kaggle/input/datasets/labanochwo/hotosm-train/zindi/images")
     df = pd.read_csv("Train.csv")
     df.geometry = df.geometry.apply(shapely_wkt.loads)
     df['coords'] = df.geometry.apply(lambda geom: [list(part.coords) for part in geom.geoms])
     df['image_path'] = df.ID.apply(lambda ID: IMAGE_DIR / f"{ID}.png")
+    
+    used_ID, _ = train_test_split(df['ID'].values, test_size=0.3, random_state=0)
+    remain_ID, test_ID = train_test_split(used_ID, test_size=0.15, random_state=0)
+    train_ID, val_ID = train_test_split(remain_ID, test_size=0.06, random_state=0)
+    json.dump({
+        'train': list(train_ID),
+        'validation': list(val_ID),
+        'test': list(test_ID)
+    }, open('data_split.json', 'w'))
     
     os.makedirs("RGB_1.0_meter", exist_ok=True)
     for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
