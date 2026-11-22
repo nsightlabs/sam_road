@@ -357,7 +357,7 @@ class SatMapDataset(Dataset):
             gt_graph_pattern = './hotosm/RGB_1.0_meter/{}__gt_graph.p'
             
             train, val, test = hotosm_data_partition()
-            coord_transform = lambda v : v
+            coord_transform = lambda v : np.stack([v[:, 1], 400 - v[:, 0]], axis=1)
 
         self.is_train = is_train
 
