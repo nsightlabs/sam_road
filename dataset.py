@@ -52,6 +52,14 @@ def spacenet_data_partition():
     test_list = data_list['test']
     return train_list, val_list, test_list
 
+def hotosm_data_partition():
+    with open('./hotosm/data_split.json','r') as jf:
+        data_list = json.load(jf)
+    train_list = data_list['train']
+    val_list = data_list['validation']
+    test_list = data_list['test']
+    return train_list, val_list, test_list
+
 
 def get_patch_info_one_img(image_index, image_size, sample_margin, patch_size, patches_per_edge):
     patch_info = []
@@ -338,6 +346,18 @@ class SatMapDataset(Dataset):
             # coord-transform ??? -> (x, y)
             # takes [N, 2] points
             coord_transform = lambda v : np.stack([v[:, 1], 400 - v[:, 0]], axis=1)
+            
+        elif self.config.DATASET == "hotosm":
+            self.IMAGE_SIZE = 256
+            self.SAMPLE_MARGIN = 0
+            
+            rgb_pattern = './hotosm/RGB_1.0_meter/{}__rgb.png'
+            keypoint_mask_pattern = './hotosm/processed/keypoint_mask_{}.png'
+            road_mask_pattern = './hotosm/processed/road_mask_{}.png'
+            gt_graph_pattern = './hotosm/RGB_1.0_meter/{}__gt_graph.p'
+            
+            train, val, test = hotosm_data_partition()
+            coord_transform = lambda v : v
 
         self.is_train = is_train
 
