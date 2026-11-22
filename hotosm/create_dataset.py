@@ -2,6 +2,7 @@ import os
 import shutil
 import pickle
 import pandas as pd
+from tqdm import tqdm
 from pathlib import Path
 from shapely import wkt as shapely_wkt
 from collections import defaultdict
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     df['image_path'] = df.ID.apply(lambda ID: IMAGE_DIR / f"{ID}.png")
     
     os.makedirs("RGB_1.0_meter", exist_ok=True)
-    for row in df.itertuples():
+    for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
         tile_index = row.ID
         lines = row.coords
         shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
