@@ -291,7 +291,7 @@ if __name__ == "__main__":
         if len(gt_nodes) == 0:
             gt_nodes = np.zeros([0, 2], dtype=np.float32)
 
-        if config.DATASET == 'spacenet':
+        if config.DATASET in ['spacenet', 'hotosm']:
             # convert ??? -> xy -> rc
             gt_nodes = np.stack([gt_nodes[:, 1], 400 - gt_nodes[:, 0]], axis=1)
             gt_nodes = gt_nodes[:, ::-1]
