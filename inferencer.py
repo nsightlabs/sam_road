@@ -6,8 +6,9 @@ import cv2
 
 from utils import load_config, create_output_dir_and_save_config
 from dataset import cityscale_data_partition, read_rgb_img, get_patch_info_one_img
-from dataset import spacenet_data_partition
+from dataset import spacenet_data_partition, hotosm_data_partition
 from model import SAMRoad
+from tqdm import tqdm
 import graph_extraction
 import graph_utils
 import triage
@@ -261,6 +262,10 @@ if __name__ == "__main__":
         _, _, test_img_indices = spacenet_data_partition()
         rgb_pattern = './spacenet/RGB_1.0_meter/{}__rgb.png'
         gt_graph_pattern = './spacenet/RGB_1.0_meter/{}__gt_graph.p'
+    elif config.DATASET == 'hotosm':
+        _, _, test_img_indices = hotosm_data_partition()
+        rgb_pattern = './hotosm/RGB_1.0_meter/{}__rgb.png'
+        gt_graph_pattern = './hotosm/RGB_1.0_meter/{}__gt_graph.p'
     
     output_dir_prefix = './save/infer_'
     if args.output_dir:
@@ -270,8 +275,8 @@ if __name__ == "__main__":
     
     total_inference_seconds = 0.0
 
-    for img_id in test_img_indices:
-        print(f'Processing {img_id}')
+    for img_id in tqdm(test_img_indices, total=len(test_img_indices), desc="Inference"):
+        # print(f'Processing {img_id}')
         # [H, W, C] RGB
         img = read_rgb_img(rgb_pattern.format(img_id))
         start_seconds = time.time()
@@ -329,7 +334,7 @@ if __name__ == "__main__":
         cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
 
         # Saves the large map
-        if config.DATASET == 'spacenet':
+        if config.DATASET in ['spacenet', 'hotosm']:
             # r, c -> ???
             pred_nodes = np.stack([400 - pred_nodes[:, 0], pred_nodes[:, 1]], axis=1)
         large_map_sat2graph_format = graph_utils.convert_to_sat2graph_format(pred_nodes, pred_edges)
@@ -340,7 +345,7 @@ if __name__ == "__main__":
         with open(graph_save_path, 'wb') as file:
             pickle.dump(large_map_sat2graph_format, file)
         
-        print(f'Done for {img_id}.')
+        # print(f'Done for {img_id}.')
     
     # log inference time
     time_txt = f'Inference completed for {args.config} in {total_inference_seconds} seconds.'
