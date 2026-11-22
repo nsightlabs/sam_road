@@ -10,6 +10,7 @@ import pickle
 import os
 import addict
 import json
+from tqdm import tqdm
 
 
 
@@ -377,8 +378,8 @@ class SatMapDataset(Dataset):
             tile_indices = tile_indices[:4]
         ##### FAST DEBUG
 
-        for tile_idx in tile_indices:
-            print(f'loading tile {tile_idx}')
+        for tile_idx in tqdm(tile_indices, total=len(tile_indices), desc="Loading tiles"):
+            # print(f'loading tile {tile_idx}')
             rgb_path = rgb_pattern.format(tile_idx)
             road_mask_path = road_mask_pattern.format(tile_idx)
             keypoint_mask_path = keypoint_mask_pattern.format(tile_idx)
