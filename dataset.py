@@ -316,7 +316,7 @@ class SatMapDataset(Dataset):
     def __init__(self, config, is_train, dev_run=False):
         self.config = config
         
-        assert self.config.DATASET in {'cityscale', 'spacenet'}
+        assert self.config.DATASET in {'cityscale', 'spacenet', 'hotosm'}
         if self.config.DATASET == 'cityscale':
             self.IMAGE_SIZE = 2048
             # TODO: SAMPLE_MARGIN here is for training, the one in config is for inference
