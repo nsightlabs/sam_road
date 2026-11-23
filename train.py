@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import numpy as np
 import torch
+import os
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
@@ -81,7 +82,27 @@ if __name__ == "__main__":
         collate_fn=graph_collate_fn,
     )
 
-    checkpoint_callback = ModelCheckpoint(every_n_epochs=1, save_top_k=-1)
+    ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sam_ckpts")
+    prefix = f"{config.DATASET}_{config.SAM_VERSION}_{config.PATCH_SIZE}"
+
+    # every epoch
+    checkpoint_callback = ModelCheckpoint(
+        every_n_epochs=1,
+        save_top_k=-1,
+        dirpath=ckpt_dir,
+        filename=f"{prefix}_{{epoch:02d}}",
+        auto_insert_metric_name=False,
+    )
+
+    # best by metric
+    best_checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
+        dirpath=ckpt_dir,
+        filename=f"{prefix}_best_{{epoch:02d}}",
+        auto_insert_metric_name=False,
+    )
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
     wandb_logger = WandbLogger()
@@ -93,7 +114,7 @@ if __name__ == "__main__":
         max_epochs=config.TRAIN_EPOCHS,
         check_val_every_n_epoch=1,
         num_sanity_val_steps=2,
-        callbacks=[checkpoint_callback, lr_monitor],
+        callbacks=[checkpoint_callback, best_checkpoint_callback, lr_monitor],
         logger=wandb_logger,
         fast_dev_run=args.fast_dev_run,
         # strategy='ddp_find_unused_parameters_true',
