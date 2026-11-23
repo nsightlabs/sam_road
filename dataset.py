@@ -418,7 +418,7 @@ class SatMapDataset(Dataset):
             elif self.config.DATASET == 'spacenet':
                 return 84667
             elif self.config.DATASET == 'hotosm':
-                return max(1, int(self.IMAGE_SIZE / self.config.PATCH_SIZE)) ** 2 * len(self.tile_indices) * 10
+                return max(1, int(self.IMAGE_SIZE / self.config.PATCH_SIZE)) ** 2 * len(self.rgbs) * 17
         else:
             return len(self.eval_patches)
 
