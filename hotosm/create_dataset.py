@@ -95,10 +95,11 @@ if __name__ == "__main__":
     os.makedirs("RGB_1.0_meter", exist_ok=True)
     for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
         tile_index = row.ID
-        lines = row.coords
-        shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
+        lines = row.coords        
         graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
-        with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
-            pickle.dump(graph, f)
+        if len(graph) > 0:
+            shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
+            with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
+                pickle.dump(graph, f)
         
     
