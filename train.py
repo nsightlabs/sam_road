@@ -85,12 +85,12 @@ if __name__ == "__main__":
     ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sam_ckpts")
     prefix = f"{config.DATASET}_{config.SAM_VERSION}_{config.PATCH_SIZE}"
 
-    # every epoch
+    # last epoch
     checkpoint_callback = ModelCheckpoint(
         every_n_epochs=1,
-        save_top_k=-1,
+        save_top_k=1,
         dirpath=ckpt_dir,
-        filename=f"{prefix}_{{epoch:02d}}",
+        filename=f"{prefix}_last_{{epoch:02d}}",
         auto_insert_metric_name=False,
     )
 
