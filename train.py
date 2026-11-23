@@ -113,9 +113,8 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         max_epochs=config.TRAIN_EPOCHS,
         check_val_every_n_epoch=1,
-        log_every_n_steps=100,
         num_sanity_val_steps=2,
-        callbacks=[checkpoint_callback, best_checkpoint_callback, lr_monitor],
+        callbacks=[checkpoint_callback, best_checkpoint_callback, lr_monitor, TQDMProgressBar(refresh_rate=50)],
         logger=wandb_logger,
         fast_dev_run=args.fast_dev_run,
         # strategy='ddp_find_unused_parameters_true',
