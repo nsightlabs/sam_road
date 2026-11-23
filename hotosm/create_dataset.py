@@ -83,7 +83,19 @@ if __name__ == "__main__":
     df['coords'] = df.geometry.apply(lambda geom: [list(part.coords) for part in geom.geoms])
     df['image_path'] = df.ID.apply(lambda ID: IMAGE_DIR / f"{ID}.png")
     
-    used_ID, _ = train_test_split(df['ID'].values, test_size=0.3, random_state=0)
+    os.makedirs("RGB_1.0_meter", exist_ok=True)
+    tmp = {}
+    for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
+        tile_index = row.ID
+        lines = row.coords        
+        graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
+        if len(graph) > 0:
+            tmp[tile_index] = graph
+            shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
+            with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
+                pickle.dump(graph, f)
+            
+    used_ID, _ = train_test_split(list(tmp.keys()), test_size=0.3, random_state=0)
     remain_ID, test_ID = train_test_split(used_ID, test_size=0.15, random_state=0)
     train_ID, val_ID = train_test_split(remain_ID, test_size=0.06, random_state=0)
     json.dump({
@@ -91,15 +103,7 @@ if __name__ == "__main__":
         'validation': list(val_ID),
         'test': list(test_ID)
     }, open('data_split.json', 'w'))
-    
-    os.makedirs("RGB_1.0_meter", exist_ok=True)
-    for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
-        tile_index = row.ID
-        lines = row.coords        
-        graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
-        if len(graph) > 0:
-            shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
-            with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
-                pickle.dump(graph, f)
+            
+            
         
     
