@@ -4,10 +4,8 @@ import os
 import imageio
 import torch
 import cv2
-from shapely.geometry import LineString, MultiLineString
 from utils import load_config, create_output_dir_and_save_config
-from dataset import cityscale_data_partition, read_rgb_img, get_patch_info_one_img
-from dataset import spacenet_data_partition, hotosm_data_partition
+from dataset import read_rgb_img, get_patch_info_one_img
 from model import SAMRoad
 from tqdm import tqdm
 import graph_extraction
@@ -236,31 +234,7 @@ def infer_one_img(net, img, config):
     
     
 
-    return pred_nodes, pred_edges, fused_keypoint_mask, fused_road_mask
-
-
-def sat2graph_to_multilinestring(graph, img_size=400, flipped=True, merge_segments=False):
-    nodes, edges = graph_utils.convert_from_sat2graph_format(graph)  # nodes: (r, c)
-    if len(nodes) == 0:
-        return MultiLineString()
-
-    nodes = nodes.astype(float)
-    if flipped:
-        nodes[:, 0] = img_size - nodes[:, 0]
-    xy = nodes[:, ::-1]                      # (r, c) -> (x, y)
-
-    if merge_segments:
-        # longer polylines between junctions/endpoints (drops pure isolated loops)
-        adj = graph_utils.edge_list_to_adj_table(nodes, edges)
-        segments = graph_utils.find_segments_in_road_graph(adj)
-        lines = [LineString(xy[s]) for s in segments]
-    else:
-        # exact: one 2-point segment per unique edge
-        unique = {(min(a, b), max(a, b)) for a, b in edges if a != b}
-        lines = [LineString(xy[[a, b]]) for a, b in unique]
-
-    return MultiLineString(lines)
-    
+    return pred_nodes, pred_edges, fused_keypoint_mask, fused_road_mask    
 
 
 if __name__ == "__main__":
@@ -356,10 +330,10 @@ if __name__ == "__main__":
             pickle.dump(large_map_sat2graph_format, file)
         
         if args.submit:
-            mls = sat2graph_to_multilinestring(large_map_sat2graph_format, img_size=config.IMAGE_SIZE, flipped=True)
+            graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
             tmp.append({
                 'ID': img_id,
-                'geometry': mls.wkt
+                'geometry': graph_wkt
             })
         
         # print(f'Done for {img_id}.')
