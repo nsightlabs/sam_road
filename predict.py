@@ -284,8 +284,9 @@ if __name__ == "__main__":
         total_inference_seconds += (end_seconds - start_seconds)
 
         # RGB already
-        viz_img = np.copy(img)
-        img_size = viz_img.shape[0]
+        if args.save_output:
+            viz_img = np.copy(img)
+        img_size = img.shape[0]
 
         # visualizes fused masks
         if args.save_output:
