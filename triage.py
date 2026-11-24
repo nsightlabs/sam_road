@@ -3,6 +3,7 @@ import pickle
 import random
 import cv2
 import numpy as np
+from shapely.geometry import LineString, MultiLineString
 
 
 def visualize_image_and_graph(img, nodes, edges, viz_img_size=512):
@@ -33,6 +34,23 @@ def visualize_image_and_graph(img, nodes, edges, viz_img_size=512):
         cv2.circle(img, (int(x), int(y)), 4, (0, 255, 255), -1)
 
     return img
+
+
+def graph_to_wkt(nodes, edges, img_size=512, decimals=2):
+    nodes = np.asarray(nodes, dtype=float)
+    if len(nodes) == 0 or len(edges) == 0:
+        return MultiLineString().wkt            # "MULTILINESTRING EMPTY"
+
+    xy = nodes[:, ::-1] * img_size              # (r, c) -> (x, y), then to pixels
+
+    # edges can be stored in both directions, so dedupe and drop self-loops
+    unique = {(min(a, b), max(a, b)) for a, b in edges if a != b}
+    lines = [LineString(xy[[a, b]]) for a, b in unique]
+
+    wkt = MultiLineString(lines).wkt
+    return wkt if decimals is None else MultiLineString(
+        [LineString(np.round(np.array(l.coords), decimals)) for l in lines]
+    ).wkt
 
 
 def rasterize_graph(nodes, edges, viz_img_size, dilation_radius):
