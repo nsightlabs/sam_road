@@ -346,7 +346,9 @@ if __name__ == "__main__":
         
     # save submission file
     if args.submit:
-        submission_df = pd.DataFrame(tmp)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        submission_df = pd.DataFrame(tmp).merge(pd.read_csv(os.path.join(current_dir, 'hotosm/Test.csv')), on='ID', how='left')
+        
         fp = str(uuid4()) + '.csv'
         submission_df.to_csv(os.path.join(output_dir, fp), index=False)
         print(f"Saved submission file to: {fp}")
