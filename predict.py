@@ -34,6 +34,9 @@ parser.add_argument(
 parser.add_argument(
     "--submit", action="store_true", help="Whether to generate submission file"
 )
+parser.add_argument(
+    "--save_output", action="store_true", help="Whether to save output images and graphs"
+)
 parser.add_argument("--device", default="cuda", help="device to use for training")
 args = parser.parse_args()
 
@@ -285,11 +288,12 @@ if __name__ == "__main__":
         img_size = viz_img.shape[0]
 
         # visualizes fused masks
-        mask_save_dir = os.path.join(output_dir, 'mask')
-        if not os.path.exists(mask_save_dir):
-            os.makedirs(mask_save_dir)
-        cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_road.png'), road_mask)
-        cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_itsc.png'), itsc_mask)
+        if args.save_output:
+            mask_save_dir = os.path.join(output_dir, 'mask')
+            if not os.path.exists(mask_save_dir):
+                os.makedirs(mask_save_dir)
+            cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_road.png'), road_mask)
+            cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_itsc.png'), itsc_mask)
 
         # # Visualizes the diff between rasterized pred/gt graphs.
         # rast_pred = triage.rasterize_graph(pred_nodes / img_size, pred_edges, img_size, dilation_radius=1)
@@ -311,11 +315,12 @@ if __name__ == "__main__":
         # cv2.imwrite(os.path.join(diff_save_dir, f'{img_id}.png'), diff_img)
 
         # Visualizes merged large map
-        viz_save_dir = os.path.join(output_dir, 'viz')
-        if not os.path.exists(viz_save_dir):
-            os.makedirs(viz_save_dir)
-        viz_img = triage.visualize_image_and_graph(viz_img, pred_nodes / img_size, pred_edges, viz_img.shape[0])
-        cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
+        if args.save_output:
+            viz_save_dir = os.path.join(output_dir, 'viz')
+            if not os.path.exists(viz_save_dir):
+                os.makedirs(viz_save_dir)
+            viz_img = triage.visualize_image_and_graph(viz_img, pred_nodes / img_size, pred_edges, viz_img.shape[0])
+            cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
         
         if args.submit:
             graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
@@ -325,16 +330,17 @@ if __name__ == "__main__":
             })
 
         # Saves the large map
-        if config.DATASET in ['spacenet', 'hotosm']:
-            # r, c -> ???
-            pred_nodes = np.stack([400 - pred_nodes[:, 0], pred_nodes[:, 1]], axis=1)
-        large_map_sat2graph_format = graph_utils.convert_to_sat2graph_format(pred_nodes, pred_edges)
-        graph_save_dir = os.path.join(output_dir, 'graph')
-        if not os.path.exists(graph_save_dir):
-            os.makedirs(graph_save_dir)
-        graph_save_path = os.path.join(graph_save_dir, f'{img_id}.p')
-        with open(graph_save_path, 'wb') as file:
-            pickle.dump(large_map_sat2graph_format, file)       
+        if args.save_output:
+            if config.DATASET in ['spacenet', 'hotosm']:
+                # r, c -> ???
+                pred_nodes = np.stack([400 - pred_nodes[:, 0], pred_nodes[:, 1]], axis=1)
+            large_map_sat2graph_format = graph_utils.convert_to_sat2graph_format(pred_nodes, pred_edges)
+            graph_save_dir = os.path.join(output_dir, 'graph')
+            if not os.path.exists(graph_save_dir):
+                os.makedirs(graph_save_dir)
+            graph_save_path = os.path.join(graph_save_dir, f'{img_id}.p')
+            with open(graph_save_path, 'wb') as file:
+                pickle.dump(large_map_sat2graph_format, file)       
         
         # print(f'Done for {img_id}.')
     
