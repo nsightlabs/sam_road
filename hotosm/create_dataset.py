@@ -90,11 +90,11 @@ if __name__ == "__main__":
     tmp = {}
     for row in tqdm(train_df.itertuples(), total=len(train_df), desc="Processing Train rows"):
         tile_index = row.ID
+        shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
         lines = row.coords        
         graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
         if len(graph) > 0:
             tmp[tile_index] = graph
-            shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
             with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
                 pickle.dump(graph, f)
                 
