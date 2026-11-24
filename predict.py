@@ -316,6 +316,13 @@ if __name__ == "__main__":
             os.makedirs(viz_save_dir)
         viz_img = triage.visualize_image_and_graph(viz_img, pred_nodes / img_size, pred_edges, viz_img.shape[0])
         cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
+        
+        if args.submit:
+            graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
+            tmp.append({
+                'ID': img_id,
+                'geometry': graph_wkt
+            })
 
         # Saves the large map
         if config.DATASET in ['spacenet', 'hotosm']:
@@ -327,14 +334,7 @@ if __name__ == "__main__":
             os.makedirs(graph_save_dir)
         graph_save_path = os.path.join(graph_save_dir, f'{img_id}.p')
         with open(graph_save_path, 'wb') as file:
-            pickle.dump(large_map_sat2graph_format, file)
-        
-        if args.submit:
-            graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
-            tmp.append({
-                'ID': img_id,
-                'geometry': graph_wkt
-            })
+            pickle.dump(large_map_sat2graph_format, file)       
         
         # print(f'Done for {img_id}.')
     
