@@ -90,17 +90,25 @@ if __name__ == "__main__":
     tmp = {}
     for row in tqdm(train_df.itertuples(), total=len(train_df), desc="Processing Train rows"):
         tile_index = row.ID
-        shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
-        lines = row.coords        
-        graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
-        if len(graph) > 0:
-            tmp[tile_index] = graph
-            with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
-                pickle.dump(graph, f)
+        dst_image = f"./RGB_1.0_meter/{tile_index}__rgb.png"
+        dst_graph = f"./RGB_1.0_meter/{tile_index}__gt_graph.p"
+        if not os.path.exists(dst_image):
+            shutil.copy(row.image_path, dst_image)
+            
+        if not os.path.exists(dst_graph):
+            lines = row.coords        
+            graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
+            if len(graph) > 0:
+                tmp[tile_index] = graph
+                
+                with open(dst_graph, 'wb') as f:
+                    pickle.dump(graph, f)
                 
     for row in tqdm(test_df.itertuples(), total=len(test_df), desc="Processing Test rows"):
         tile_index = row.ID
-        shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
+        dst_image = f"./RGB_1.0_meter/{tile_index}__rgb.png"
+        if not os.path.exists(dst_image):
+            shutil.copy(row.image_path, dst_image)
             
     used_ID, eval_ID = train_test_split(list(tmp.keys()), test_size=0.3, random_state=0)
     remain_ID, test_ID = train_test_split(used_ID, test_size=0.15, random_state=0)
