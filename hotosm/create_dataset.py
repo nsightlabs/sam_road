@@ -77,15 +77,18 @@ def lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True):
     return {k: sorted(v) for k, v in graph.items()}
 
 if __name__ == "__main__":    
-    IMAGE_DIR = Path("/kaggle/input/datasets/labanochwo/hotosm-train/zindi/images")
-    df = pd.read_csv("Train.csv")
-    df.geometry = df.geometry.apply(shapely_wkt.loads)
-    df['coords'] = df.geometry.apply(lambda geom: [list(part.coords) for part in geom.geoms])
-    df['image_path'] = df.ID.apply(lambda ID: IMAGE_DIR / f"{ID}.png")
-    
+    TRAIN_IMAGE_DIR = Path("/kaggle/input/datasets/labanochwo/hotosm-train/zindi/images")
+    TEST_IMAGE_DIR = Path("/kaggle/input/datasets/labanochwo/hotosm-test/zindi/images")
+    train_df = pd.read_csv("Train.csv")
+    test_df = pd.read_csv("Test.csv")
+    train_df.geometry = train_df.geometry.apply(shapely_wkt.loads)
+    train_df['coords'] = train_df.geometry.apply(lambda geom: [list(part.coords) for part in geom.geoms])
+    train_df['image_path'] = train_df.ID.apply(lambda ID: TRAIN_IMAGE_DIR / f"{ID}.png")
+    test_df['image_path'] = test_df.ID.apply(lambda ID: TEST_IMAGE_DIR / f"{ID}.png")
+
     os.makedirs("RGB_1.0_meter", exist_ok=True)
     tmp = {}
-    for row in tqdm(df.itertuples(), total=len(df), desc="Processing rows"):
+    for row in tqdm(train_df.itertuples(), total=len(train_df), desc="Processing Train rows"):
         tile_index = row.ID
         lines = row.coords        
         graph = lines_to_graph(lines, size=256, flip_y=True, border=1.0, node_first=True)
@@ -94,14 +97,20 @@ if __name__ == "__main__":
             shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
             with open(f"./RGB_1.0_meter/{tile_index}__gt_graph.p", 'wb') as f:
                 pickle.dump(graph, f)
+                
+    for row in tqdm(test_df.itertuples(), total=len(test_df), desc="Processing Test rows"):
+        tile_index = row.ID
+        shutil.copy(row.image_path, f"./RGB_1.0_meter/{tile_index}__rgb.png")
             
-    used_ID, _ = train_test_split(list(tmp.keys()), test_size=0.3, random_state=0)
+    used_ID, eval_ID = train_test_split(list(tmp.keys()), test_size=0.3, random_state=0)
     remain_ID, test_ID = train_test_split(used_ID, test_size=0.15, random_state=0)
     train_ID, val_ID = train_test_split(remain_ID, test_size=0.06, random_state=0)
     json.dump({
         'train': list(train_ID),
         'validation': list(val_ID),
-        'test': list(test_ID)
+        'test': list(test_ID),
+        'evaluate': list(eval_ID),
+        'submission': list(test_df.ID)
     }, open('data_split.json', 'w'))
             
             
