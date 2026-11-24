@@ -15,6 +15,7 @@ import pickle
 import scipy
 import rtree
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 import time
 from uuid import uuid4
 from argparse import ArgumentParser
@@ -40,6 +41,15 @@ parser.add_argument("--device", default="cuda", help="device to use for inferenc
 parser.add_argument(
     "--num_gpus", type=int, default=0, help="number of GPUs to use, 0 = all visible GPUs"
 )
+parser.add_argument(
+    "--img_batch", type=int, default=1,
+    help="images per forward pass. >1 enables cross-image batching (only for images that "
+         "produce exactly one patch covering the whole image; others fall back to the "
+         "per-image path automatically)."
+)
+parser.add_argument(
+    "--io_threads", type=int, default=4, help="threads used to read images in each worker"
+)
 args = parser.parse_args()
 
 
@@ -56,6 +66,9 @@ def get_batch_img_patches(img, batch_patch_info):
     return batch
 
 
+# --------------------------------------------------------------------------- #
+# Per-image inference (original path, works for any number of patches)
+# --------------------------------------------------------------------------- #
 def infer_one_img(net, img, config):
     # NOTE: uses the global args.device, which each worker sets for its own GPU.
     image_size = img.shape[0]
@@ -218,12 +231,140 @@ def infer_one_img(net, img, config):
     return pred_nodes, pred_edges, fused_keypoint_mask, fused_road_mask
 
 
+# --------------------------------------------------------------------------- #
+# Cross-image batched inference (single patch per image)
+# --------------------------------------------------------------------------- #
+_single_patch_cache = {}
+
+
+def is_single_patch(size, config):
+    """True if an image of this size yields exactly one patch that covers all of it."""
+    if size not in _single_patch_cache:
+        info = get_patch_info_one_img(
+            0, size, config.SAMPLE_MARGIN, config.PATCH_SIZE, config.INFER_PATCHES_PER_EDGE)
+        ok = False
+        if len(info) == 1:
+            _, (x0, y0), (x1, y1) = info[0]
+            ok = (x0, y0, x1, y1) == (0, 0, size, size)
+        _single_patch_cache[size] = ok
+    return _single_patch_cache[size]
+
+
+def can_batch(imgs, config):
+    if len(imgs) < 2:
+        return False
+    shapes = {im.shape for im in imgs}
+    if len(shapes) != 1:
+        return False
+    h, w = imgs[0].shape[:2]
+    return h == w and is_single_patch(h, config)
+
+
+def infer_images_batched(net, imgs, config):
+    """
+    imgs: list of [H, W, C] arrays, same size, one patch each (see can_batch).
+    Returns a list of (pred_nodes (r, c), pred_edges, keypoint_mask, road_mask).
+    With one patch per image there is nothing to average, so edge scores are
+    thresholded directly.
+    """
+    # ---- pass 1: one forward pass for K images ----
+    batch = torch.stack([torch.tensor(im, dtype=torch.float32) for im in imgs]).to(args.device)
+    with torch.no_grad():
+        mask_scores, feats = net.infer_masks_and_img_features(batch)   # [K,H,W,2], [K,D,h,w]
+    masks = (mask_scores * 255).to(torch.uint8).cpu().numpy()
+
+    # ---- per-image CPU work: graph points + neighbour pairs ----
+    K = len(imgs)
+    results = [None] * K
+    pts_l, pairs_l, valid_l, owners = [], [], [], []
+    for i in range(K):
+        kp, road = masks[i, :, :, 0], masks[i, :, :, 1]
+        pts = graph_extraction.extract_graph_points(kp, road, config)
+        if pts.shape[0] == 0:
+            results[i] = (pts, np.zeros((0, 2), dtype=np.int32), kp, road)
+            continue
+        n = pts.shape[0]
+        tree = scipy.spatial.KDTree(pts)
+        _, knn = tree.query(pts, k=config.MAX_NEIGHBOR_QUERIES + 1,
+                            distance_upper_bound=config.NEIGHBOR_RADIUS)
+        knn = knn[:, 1:]  # removes self
+        src = np.tile(np.arange(n)[:, None], (1, config.MAX_NEIGHBOR_QUERIES))
+        valid = knn < n
+        tgt = np.where(valid, knn, src)
+        pts_l.append(pts)
+        pairs_l.append(np.stack([src, tgt], -1))
+        valid_l.append(valid)
+        owners.append(i)
+        results[i] = (pts[:, ::-1], None, kp, road)  # nodes in (r, c); edges filled below
+
+    # ---- pass 2: one toponet call for all images that have points ----
+    if owners:
+        L = max(p.shape[0] for p in pts_l)
+
+        def pad(a):
+            return np.pad(a, [(0, L - a.shape[0])] + [(0, 0)] * (a.ndim - 1))
+
+        bp = torch.tensor(np.stack([pad(a) for a in pts_l]), device=args.device)
+        bpair = torch.tensor(np.stack([pad(a) for a in pairs_l]), device=args.device)
+        bvalid = torch.tensor(np.stack([pad(a) for a in valid_l]), device=args.device)
+        with torch.no_grad():
+            scores = net.infer_toponet(feats[owners], bp, bpair, bvalid)
+        # all-invalid (padded, no neighbors) queries return nan scores
+        scores = torch.where(torch.isnan(scores), -100.0, scores).squeeze(-1).cpu().numpy()
+
+        for j, i in enumerate(owners):
+            n = pts_l[j].shape[0]
+            keep = valid_l[j] & (scores[j, :n] > config.TOPO_THRESHOLD)
+            edges = pairs_l[j][keep]  # [E, 2]
+            nodes, _, kp, road = results[i]
+            results[i] = (nodes, edges.reshape(-1, 2), kp, road)
+    return results
+
+
+# --------------------------------------------------------------------------- #
+# Saving
+# --------------------------------------------------------------------------- #
+def handle_result(img_id, img, pred_nodes, pred_edges, itsc_mask, road_mask,
+                  config, output_dir, rows):
+    img_size = img.shape[0]
+
+    if args.save_output:
+        # fused masks
+        mask_save_dir = os.path.join(output_dir, 'mask')
+        os.makedirs(mask_save_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_road.png'), road_mask)
+        cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_itsc.png'), itsc_mask)
+
+        # visualizes merged large map
+        viz_save_dir = os.path.join(output_dir, 'viz')
+        os.makedirs(viz_save_dir, exist_ok=True)
+        viz_img = triage.visualize_image_and_graph(np.copy(img), pred_nodes / img_size, pred_edges, img_size)
+        cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
+
+    # WKT must be built BEFORE the sat2graph row flip below
+    if args.submit:
+        graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
+        rows.append({'ID': img_id, 'geometry': graph_wkt})
+
+    if args.save_output:
+        if config.DATASET in ['spacenet', 'hotosm']:
+            pred_nodes = np.stack([400 - pred_nodes[:, 0], pred_nodes[:, 1]], axis=1)
+        large_map_sat2graph_format = graph_utils.convert_to_sat2graph_format(pred_nodes, pred_edges)
+        graph_save_dir = os.path.join(output_dir, 'graph')
+        os.makedirs(graph_save_dir, exist_ok=True)
+        graph_save_path = os.path.join(graph_save_dir, f'{img_id}.p')
+        with open(graph_save_path, 'wb') as file:
+            pickle.dump(large_map_sat2graph_format, file)
+
+
+# --------------------------------------------------------------------------- #
+# Worker: one process per GPU
+# --------------------------------------------------------------------------- #
 def worker(rank, world_size, output_dir, img_ids):
     """Runs inference on img_ids[rank::world_size] using one device."""
-    # infer_one_img reads this global, so each process points it at its own device
-    if args.device == "cpu":
-        args.device = "cpu"
-    else:
+    # infer_one_img / infer_images_batched read this global, so each process
+    # points it at its own device.
+    if args.device != "cpu":
         args.device = f"cuda:{rank}"
         torch.cuda.set_device(rank)
         torch.backends.cudnn.benchmark = True
@@ -248,47 +389,32 @@ def worker(rank, world_size, output_dir, img_ids):
         rgb_pattern = './hotosm/RGB_1.0_meter/{}__rgb.png'
 
     my_ids = img_ids[rank::world_size]
+    K = max(1, args.img_batch)
     rows = []
     total_inference_seconds = 0.0
 
-    for img_id in tqdm(my_ids, total=len(my_ids), desc=f"Inference [{args.device}]", position=rank):
-        # [H, W, C] RGB
-        img = read_rgb_img(rgb_pattern.format(img_id))
-        start_seconds = time.time()
-        # coords in (r, c)
-        pred_nodes, pred_edges, itsc_mask, road_mask = infer_one_img(net, img, config)
-        total_inference_seconds += time.time() - start_seconds
+    pbar = tqdm(total=len(my_ids), desc=f"Inference [{args.device}]", position=rank)
+    with ThreadPoolExecutor(max(1, args.io_threads)) as pool:
+        for s in range(0, len(my_ids), K):
+            ids = my_ids[s:s + K]
+            # [H, W, C] RGB
+            imgs = list(pool.map(lambda i: read_rgb_img(rgb_pattern.format(i)), ids))
 
-        img_size = img.shape[0]
+            start_seconds = time.time()
+            if can_batch(imgs, config):
+                outs = infer_images_batched(net, imgs, config)
+            else:
+                # coords in (r, c)
+                outs = [infer_one_img(net, im, config) for im in imgs]
+            if args.device != "cpu":
+                torch.cuda.synchronize()
+            total_inference_seconds += time.time() - start_seconds
 
-        if args.save_output:
-            # fused masks
-            mask_save_dir = os.path.join(output_dir, 'mask')
-            os.makedirs(mask_save_dir, exist_ok=True)
-            cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_road.png'), road_mask)
-            cv2.imwrite(os.path.join(mask_save_dir, f'{img_id}_itsc.png'), itsc_mask)
-
-            # visualizes merged large map
-            viz_save_dir = os.path.join(output_dir, 'viz')
-            os.makedirs(viz_save_dir, exist_ok=True)
-            viz_img = triage.visualize_image_and_graph(np.copy(img), pred_nodes / img_size, pred_edges, img_size)
-            cv2.imwrite(os.path.join(viz_save_dir, f'{img_id}.png'), viz_img)
-
-        # WKT must be built BEFORE the sat2graph row flip below
-        if args.submit:
-            graph_wkt = triage.graph_to_wkt(pred_nodes / img_size, pred_edges, img_size)
-            rows.append({'ID': img_id, 'geometry': graph_wkt})
-
-        # Saves the large map
-        if args.save_output:
-            if config.DATASET in ['spacenet', 'hotosm']:
-                pred_nodes = np.stack([400 - pred_nodes[:, 0], pred_nodes[:, 1]], axis=1)
-            large_map_sat2graph_format = graph_utils.convert_to_sat2graph_format(pred_nodes, pred_edges)
-            graph_save_dir = os.path.join(output_dir, 'graph')
-            os.makedirs(graph_save_dir, exist_ok=True)
-            graph_save_path = os.path.join(graph_save_dir, f'{img_id}.p')
-            with open(graph_save_path, 'wb') as file:
-                pickle.dump(large_map_sat2graph_format, file)
+            for img_id, img, (pred_nodes, pred_edges, itsc_mask, road_mask) in zip(ids, imgs, outs):
+                handle_result(img_id, img, pred_nodes, pred_edges, itsc_mask, road_mask,
+                              config, output_dir, rows)
+            pbar.update(len(ids))
+    pbar.close()
 
     # per-worker results, merged by the main process
     pd.DataFrame(rows, columns=['ID', 'geometry']).to_csv(
@@ -329,13 +455,15 @@ if __name__ == "__main__":
     wall_seconds = time.time() - wall_start
 
     # log inference time
-    gpu_seconds = 0.0
+    summed = 0.0
     for r in range(n_workers):
-        with open(os.path.join(output_dir, f'time_{r}.txt')) as f:
-            gpu_seconds += float(f.read())
-        os.remove(os.path.join(output_dir, f'time_{r}.txt'))
+        tpath = os.path.join(output_dir, f'time_{r}.txt')
+        with open(tpath) as f:
+            summed += float(f.read())
+        os.remove(tpath)
     time_txt = (f'Inference completed for {args.config} in {wall_seconds:.1f} seconds wall-clock '
-                f'({gpu_seconds:.1f} seconds summed over {n_workers} worker(s)).')
+                f'({summed:.1f} seconds model+postprocess time summed over {n_workers} worker(s), '
+                f'img_batch={args.img_batch}).')
     print(time_txt)
     with open(os.path.join(output_dir, 'inference_time.txt'), 'w') as f:
         f.write(time_txt)
