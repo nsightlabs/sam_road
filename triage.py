@@ -47,6 +47,20 @@ def graph_to_wkt(nodes, edges, img_size=512):
 
     return MultiLineString(lines).wkt
 
+def graph_to_wkt(nodes, edges, img_size=512):
+    nodes = np.asarray(nodes, dtype=float)
+    if len(nodes) == 0 or len(edges) == 0:
+        return MultiLineString().wkt            # "MULTILINESTRING EMPTY"
+
+    xy = nodes[:, ::-1] * img_size              # (r, c) -> (x, y), then to pixels
+
+    # edges can be stored in both directions, so dedupe and drop self-loops
+    unique = {(min(a, b), max(a, b)) for a, b in edges if a != b}
+    lines = [LineString(xy[[a, b]]) for a, b in unique]
+
+    wkt = MultiLineString(lines).wkt
+    return wkt
+
 
 def rasterize_graph(nodes, edges, viz_img_size, dilation_radius):
     # Rasterize the graph.
