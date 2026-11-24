@@ -163,6 +163,7 @@ def infer_one_img(net, img, config):
         with prof.section("patch_prep_cpu"):
             # tensor [B, H, W, C]
             batch_img_patches = get_batch_img_patches(img, batch_patch_info)
+            print(batch_img_patches.shape)
 
         with prof.section("pass1_model"):  # host->device copy + image encoder + mask decoder
             with torch.no_grad():
