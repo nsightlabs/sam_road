@@ -373,4 +373,6 @@ if __name__ == "__main__":
     # save submission file
     if args.submit:
         submission_df = pd.DataFrame(tmp)
-        submission_df.to_csv(os.path.join(output_dir, str(uuid4()) + '.csv'), index=False)
+        fp = str(uuid4()) + '.csv'
+        submission_df.to_csv(os.path.join(output_dir, fp), index=False)
+        print(f"Saved submission file to: {fp}")
