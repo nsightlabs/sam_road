@@ -36,21 +36,16 @@ def visualize_image_and_graph(img, nodes, edges, viz_img_size=512):
     return img
 
 
-def graph_to_wkt(nodes, edges, img_size=512, decimals=2):
-    nodes = np.asarray(nodes, dtype=float)
-    if len(nodes) == 0 or len(edges) == 0:
-        return MultiLineString().wkt            # "MULTILINESTRING EMPTY"
+def graph_to_wkt(nodes, edges, img_size=512):
+    nodes = nodes[:, ::-1]
 
-    xy = nodes[:, ::-1] * img_size              # (r, c) -> (x, y), then to pixels
+    lines = []
+    for edge in edges:
+        start_node = nodes[edge[0]] * img_size
+        end_node = nodes[edge[1]] * img_size
+        lines.append(LineString([start_node, end_node]))
 
-    # edges can be stored in both directions, so dedupe and drop self-loops
-    unique = {(min(a, b), max(a, b)) for a, b in edges if a != b}
-    lines = [LineString(xy[[a, b]]) for a, b in unique]
-
-    wkt = MultiLineString(lines).wkt
-    return wkt if decimals is None else MultiLineString(
-        [LineString(np.round(np.array(l.coords), decimals)) for l in lines]
-    ).wkt
+    return MultiLineString(lines).wkt
 
 
 def rasterize_graph(nodes, edges, viz_img_size, dilation_radius):
