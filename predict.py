@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 import os
 import imageio
 import torch
 import cv2
-
+from shapely.geometry import LineString, MultiLineString
 from utils import load_config, create_output_dir_and_save_config
 from dataset import cityscale_data_partition, read_rgb_img, get_patch_info_one_img
 from dataset import spacenet_data_partition, hotosm_data_partition
@@ -18,7 +19,7 @@ import scipy
 import rtree
 from collections import defaultdict
 import time
-
+from uuid import uuid4
 from argparse import ArgumentParser
 
 
@@ -31,6 +32,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--output_dir", default=None, help="Name of the output dir, if not specified will use timestamp"
+)
+parser.add_argument(
+    "--submit", action="store_true", help="Whether to generate submission file"
 )
 parser.add_argument("--device", default="cuda", help="device to use for training")
 args = parser.parse_args()
@@ -234,6 +238,28 @@ def infer_one_img(net, img, config):
 
     return pred_nodes, pred_edges, fused_keypoint_mask, fused_road_mask
 
+
+def sat2graph_to_multilinestring(graph, img_size=400, flipped=True, merge_segments=False):
+    nodes, edges = graph_utils.convert_from_sat2graph_format(graph)  # nodes: (r, c)
+    if len(nodes) == 0:
+        return MultiLineString()
+
+    nodes = nodes.astype(float)
+    if flipped:
+        nodes[:, 0] = img_size - nodes[:, 0]
+    xy = nodes[:, ::-1]                      # (r, c) -> (x, y)
+
+    if merge_segments:
+        # longer polylines between junctions/endpoints (drops pure isolated loops)
+        adj = graph_utils.edge_list_to_adj_table(nodes, edges)
+        segments = graph_utils.find_segments_in_road_graph(adj)
+        lines = [LineString(xy[s]) for s in segments]
+    else:
+        # exact: one 2-point segment per unique edge
+        unique = {(min(a, b), max(a, b)) for a, b in edges if a != b}
+        lines = [LineString(xy[[a, b]]) for a, b in unique]
+
+    return MultiLineString(lines)
     
 
 
@@ -269,6 +295,7 @@ if __name__ == "__main__":
     
     total_inference_seconds = 0.0
 
+    if args.submit: tmp = []
     for img_id in tqdm(predict_img_indices, total=len(predict_img_indices), desc="Inference"):
         # print(f'Processing {img_id}')
         # [H, W, C] RGB
@@ -328,6 +355,13 @@ if __name__ == "__main__":
         with open(graph_save_path, 'wb') as file:
             pickle.dump(large_map_sat2graph_format, file)
         
+        if args.submit:
+            mls = sat2graph_to_multilinestring(large_map_sat2graph_format, img_size=config.IMAGE_SIZE, flipped=True)
+            tmp.append({
+                'ID': img_id,
+                'geometry': mls.wkt
+            })
+        
         # print(f'Done for {img_id}.')
     
     # log inference time
@@ -335,3 +369,8 @@ if __name__ == "__main__":
     print(time_txt)
     with open(os.path.join(output_dir, 'inference_time.txt'), 'w') as f:
         f.write(time_txt)
+        
+    # save submission file
+    if args.submit:
+        submission_df = pd.DataFrame(tmp)
+        submission_df.to_csv(os.path.join(output_dir, str(uuid4()) + '.csv'), index=False)
