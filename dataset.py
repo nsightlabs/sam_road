@@ -316,6 +316,7 @@ class SatMapDataset(Dataset):
     def __init__(self, config, split, dev_run=False):
         self.config = config
         self.split = split
+        self.is_train = (split == 'train')
 
         assert self.config.DATASET in {'cityscale', 'spacenet', 'hotosm'}
         if self.config.DATASET == 'cityscale':
