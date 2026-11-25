@@ -62,7 +62,8 @@ if __name__ == "__main__":
 
     net = SAMRoad(config)
 
-    train_ds, val_ds = SatMapDataset(config, is_train=True, dev_run=dev_run), SatMapDataset(config, is_train=False, dev_run=dev_run)
+    train_ds, val_ds = SatMapDataset(config, split='train', dev_run=dev_run), SatMapDataset(config, split='val', dev_run=dev_run)
+    test_ds = SatMapDataset(config, split='test', dev_run=dev_run)
 
     train_loader = DataLoader(
         train_ds,
@@ -75,6 +76,15 @@ if __name__ == "__main__":
 
     val_loader = DataLoader(
         val_ds,
+        batch_size=config.BATCH_SIZE,
+        shuffle=False,
+        num_workers=config.DATA_WORKER_NUM,
+        pin_memory=True,
+        collate_fn=graph_collate_fn,
+    )
+    
+    test_loader = DataLoader(
+        test_ds,
         batch_size=config.BATCH_SIZE,
         shuffle=False,
         num_workers=config.DATA_WORKER_NUM,
@@ -123,3 +133,4 @@ if __name__ == "__main__":
         )
 
     trainer.fit(net, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    trainer.test(net, dataloaders=test_loader)

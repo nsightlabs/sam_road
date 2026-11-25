@@ -37,7 +37,7 @@ def cityscale_data_partition():
 
         if x % 20 == 8:
             indrange_test.append(x)
-    return indrange_train, indrange_validation, indrange_test
+    return indrange_train, indrange_validation, indrange_test, []
 
 
 def spacenet_data_partition():
@@ -51,7 +51,7 @@ def spacenet_data_partition():
     train_list = data_list['train']
     val_list = data_list['validation']
     test_list = data_list['test']
-    return train_list, val_list, test_list
+    return train_list, val_list, test_list, []
 
 def hotosm_data_partition():
     with open('./hotosm/data_split.json','r') as jf:
@@ -59,7 +59,7 @@ def hotosm_data_partition():
     train_list = data_list['train']
     val_list = data_list['validation']
     test_list = data_list['test']
-    return train_list, val_list, test_list
+    return train_list, val_list, test_list, data_list['evaluate']
 
 
 def get_patch_info_one_img(image_index, image_size, sample_margin, patch_size, patches_per_edge):
@@ -313,9 +313,10 @@ def graph_collate_fn(batch):
 
 
 class SatMapDataset(Dataset):
-    def __init__(self, config, is_train, dev_run=False):
+    def __init__(self, config, split, dev_run=False):
         self.config = config
-        
+        self.split = split
+
         assert self.config.DATASET in {'cityscale', 'spacenet', 'hotosm'}
         if self.config.DATASET == 'cityscale':
             self.IMAGE_SIZE = 2048
@@ -327,7 +328,7 @@ class SatMapDataset(Dataset):
             road_mask_pattern = './cityscale/processed/road_mask_{}.png'
             gt_graph_pattern = './cityscale/20cities/region_{}_refine_gt_graph.p'
             
-            train, val, test = cityscale_data_partition()
+            train, val, test, evaluate = cityscale_data_partition()
 
             # coord-transform = (r, c) -> (x, y)
             # takes [N, 2] points
@@ -342,7 +343,7 @@ class SatMapDataset(Dataset):
             road_mask_pattern = './spacenet/processed/road_mask_{}.png'
             gt_graph_pattern = './spacenet/RGB_1.0_meter/{}__gt_graph.p'
             
-            train, val, test = spacenet_data_partition()
+            train, val, test, evaluate = spacenet_data_partition()
 
             # coord-transform ??? -> (x, y)
             # takes [N, 2] points
@@ -357,15 +358,20 @@ class SatMapDataset(Dataset):
             road_mask_pattern = './hotosm/processed/road_mask_{}.png'
             gt_graph_pattern = './hotosm/RGB_1.0_meter/{}__gt_graph.p'
             
-            train, val, test = hotosm_data_partition()
+            train, val, test, evaluate = hotosm_data_partition()
             coord_transform = lambda v : np.stack([v[:, 1], 400 - v[:, 0]], axis=1)
 
-        self.is_train = is_train
-
         train_split = train + val
-        test_split = test
+        val_split = test
+        test_split = evaluate
 
-        tile_indices = train_split if self.is_train else test_split
+        if self.split == 'test':
+            tile_indices = test_split
+        elif self.split == 'train':
+            tile_indices = train_split
+        elif self.split == 'val':
+            tile_indices = val_split
+            
         self.tile_indices = tile_indices
         
         # Stores all imgs in memory.
