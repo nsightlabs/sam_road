@@ -562,9 +562,6 @@ class SAMRoad(pl.LightningModule):
         # added section for new metrics
         self.keypoint_pr_curve.update(mask_scores[..., 0], keypoint_mask.to(torch.int32))
         self.road_pr_curve.update(mask_scores[..., 1], road_mask.to(torch.int32))        
-        valid = valid.to(torch.int32)
-        topo_gt = (1 - valid) * -1 + valid * topo_gt
-        self.topo_pr_curve.update(topo_scores, topo_gt.unsqueeze(-1).to(torch.int32))        
         
         # [B, N_samples, N_pairs, 1]
         topo_loss = self.topo_criterion(topo_logits, topo_gt.unsqueeze(-1).to(torch.float32))
