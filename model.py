@@ -545,63 +545,61 @@ class SAMRoad(pl.LightningModule):
 
 
     def validation_step(self, batch, batch_idx):
-        # # masks: [B, H, W]
-        # rgb, keypoint_mask, road_mask = batch['rgb'], batch['keypoint_mask'], batch['road_mask']
-        # graph_points, pairs, valid = batch['graph_points'], batch['pairs'], batch['valid']
-
-        # # masks: [B, H, W, 2] topo: [B, N_samples, N_pairs, 1]
-        # mask_logits, mask_scores, topo_logits, topo_scores = self(rgb, graph_points, pairs, valid)
-
-        # gt_masks = torch.stack([keypoint_mask, road_mask], dim=3)
-
-
-        # mask_loss = self.mask_criterion(mask_logits, gt_masks)
-
-        # topo_gt, topo_loss_mask = batch['connected'].to(torch.int32), valid.to(torch.float32)
-        # # [B, N_samples, N_pairs, 1]
-        # topo_loss = self.topo_criterion(topo_logits, topo_gt.unsqueeze(-1).to(torch.float32))
-        # topo_loss *= topo_loss_mask.unsqueeze(-1)
-        # topo_loss = topo_loss.sum() / topo_loss_mask.sum()
-        # loss = mask_loss + topo_loss
-        # self.log('val_mask_loss', mask_loss, on_step=False, on_epoch=True, prog_bar=True)
-        # self.log('val_topo_loss', topo_loss, on_step=False, on_epoch=True, prog_bar=True)
-        # self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
-
-        # # Log images
-        # if batch_idx == 0:
-        #     max_viz_num = 4
-        #     viz_rgb = rgb[:max_viz_num, :, :]
-        #     viz_pred_keypoint = mask_scores[:max_viz_num, :, :, 0]
-        #     viz_pred_road = mask_scores[:max_viz_num, :, :, 1]
-        #     viz_gt_keypoint = keypoint_mask[:max_viz_num, ...]
-        #     viz_gt_road = road_mask[:max_viz_num, ...]
-            
-        #     columns = ['rgb', 'gt_keypoint', 'gt_road', 'pred_keypoint', 'pred_road']
-        #     data = [[wandb.Image(x.cpu().numpy()) for x in row] for row in list(zip(viz_rgb, viz_gt_keypoint, viz_gt_road, viz_pred_keypoint, viz_pred_road))]
-        #     self.logger.log_table(key='viz_table', columns=columns, data=data)
-
-        # self.keypoint_iou.update(mask_scores[..., 0], keypoint_mask)
-        # self.road_iou.update(mask_scores[..., 1], road_mask)
-        
-        # valid = valid.to(torch.int32)
-        # topo_gt = (1 - valid) * -1 + valid * topo_gt
-        # self.topo_f1.update(topo_scores, topo_gt.unsqueeze(-1))
-        
         self.test_step(batch, batch_idx)
+        # masks: [B, H, W]
+        rgb, keypoint_mask, road_mask = batch['rgb'], batch['keypoint_mask'], batch['road_mask']
+        graph_points, pairs, valid = batch['graph_points'], batch['pairs'], batch['valid']
+
+        # masks: [B, H, W, 2] topo: [B, N_samples, N_pairs, 1]
+        mask_logits, mask_scores, topo_logits, topo_scores = self(rgb, graph_points, pairs, valid)
+
+        gt_masks = torch.stack([keypoint_mask, road_mask], dim=3)
+
+
+        mask_loss = self.mask_criterion(mask_logits, gt_masks)
+
+        topo_gt, topo_loss_mask = batch['connected'].to(torch.int32), valid.to(torch.float32)
+        # [B, N_samples, N_pairs, 1]
+        topo_loss = self.topo_criterion(topo_logits, topo_gt.unsqueeze(-1).to(torch.float32))
+        topo_loss *= topo_loss_mask.unsqueeze(-1)
+        topo_loss = topo_loss.sum() / topo_loss_mask.sum()
+        loss = mask_loss + topo_loss
+        self.log('val_mask_loss', mask_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('val_topo_loss', topo_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Log images
+        if batch_idx == 0:
+            max_viz_num = 4
+            viz_rgb = rgb[:max_viz_num, :, :]
+            viz_pred_keypoint = mask_scores[:max_viz_num, :, :, 0]
+            viz_pred_road = mask_scores[:max_viz_num, :, :, 1]
+            viz_gt_keypoint = keypoint_mask[:max_viz_num, ...]
+            viz_gt_road = road_mask[:max_viz_num, ...]
+            
+            columns = ['rgb', 'gt_keypoint', 'gt_road', 'pred_keypoint', 'pred_road']
+            data = [[wandb.Image(x.cpu().numpy()) for x in row] for row in list(zip(viz_rgb, viz_gt_keypoint, viz_gt_road, viz_pred_keypoint, viz_pred_road))]
+            self.logger.log_table(key='viz_table', columns=columns, data=data)
+
+        self.keypoint_iou.update(mask_scores[..., 0], keypoint_mask)
+        self.road_iou.update(mask_scores[..., 1], road_mask)
+        
+        valid = valid.to(torch.int32)
+        topo_gt = (1 - valid) * -1 + valid * topo_gt
+        self.topo_f1.update(topo_scores, topo_gt.unsqueeze(-1))
         
 
-    def on_validation_epoch_end(self):
-        # keypoint_iou = self.keypoint_iou.compute()
-        # road_iou = self.road_iou.compute()
-        # topo_f1 = self.topo_f1.compute()
-        # self.log("keypoint_iou", keypoint_iou)
-        # self.log("road_iou", road_iou)
-        # self.log("topo_f1", topo_f1)
-        # self.keypoint_iou.reset()
-        # self.road_iou.reset()
-        # self.topo_f1.reset()
-        
+    def on_validation_epoch_end(self):        
         self.on_test_end()
+        keypoint_iou = self.keypoint_iou.compute()
+        road_iou = self.road_iou.compute()
+        topo_f1 = self.topo_f1.compute()
+        self.log("keypoint_iou", keypoint_iou)
+        self.log("road_iou", road_iou)
+        self.log("topo_f1", topo_f1)
+        self.keypoint_iou.reset()
+        self.road_iou.reset()
+        self.topo_f1.reset()
 
     def test_step(self, batch, batch_idx):
         # masks: [B, H, W]
