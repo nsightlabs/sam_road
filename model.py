@@ -545,7 +545,6 @@ class SAMRoad(pl.LightningModule):
 
 
     def validation_step(self, batch, batch_idx):
-        self.test_step(batch, batch_idx)
         # masks: [B, H, W]
         rgb, keypoint_mask, road_mask = batch['rgb'], batch['keypoint_mask'], batch['road_mask']
         graph_points, pairs, valid = batch['graph_points'], batch['pairs'], batch['valid']
@@ -559,6 +558,14 @@ class SAMRoad(pl.LightningModule):
         mask_loss = self.mask_criterion(mask_logits, gt_masks)
 
         topo_gt, topo_loss_mask = batch['connected'].to(torch.int32), valid.to(torch.float32)
+        
+        # added section for new metrics
+        self.keypoint_pr_curve.update(mask_scores[..., 0], keypoint_mask.to(torch.int32))
+        self.road_pr_curve.update(mask_scores[..., 1], road_mask.to(torch.int32))        
+        valid = valid.to(torch.int32)
+        topo_gt = (1 - valid) * -1 + valid * topo_gt
+        self.topo_pr_curve.update(topo_scores, topo_gt.unsqueeze(-1).to(torch.int32))        
+        
         # [B, N_samples, N_pairs, 1]
         topo_loss = self.topo_criterion(topo_logits, topo_gt.unsqueeze(-1).to(torch.float32))
         topo_loss *= topo_loss_mask.unsqueeze(-1)
@@ -590,7 +597,6 @@ class SAMRoad(pl.LightningModule):
         
 
     def on_validation_epoch_end(self):        
-        self.on_test_end()
         keypoint_iou = self.keypoint_iou.compute()
         road_iou = self.road_iou.compute()
         topo_f1 = self.topo_f1.compute()
@@ -600,6 +606,20 @@ class SAMRoad(pl.LightningModule):
         self.keypoint_iou.reset()
         self.road_iou.reset()
         self.topo_f1.reset()
+        def find_best_threshold(pr_curve_metric, category):
+            print(f'======= {category} ======')   
+            precision, recall, thresholds = pr_curve_metric.compute()
+            f1_scores = 2 * (precision * recall) / (precision + recall)
+            best_threshold_index = torch.argmax(f1_scores)
+            best_threshold = thresholds[best_threshold_index]
+            best_precision = precision[best_threshold_index]
+            best_recall = recall[best_threshold_index]
+            best_f1 = f1_scores[best_threshold_index]
+            print(f'Best threshold {best_threshold}, P={best_precision} R={best_recall} F1={best_f1}')
+            pr_curve_metric.reset()
+        
+        find_best_threshold(self.keypoint_pr_curve, 'keypoint')
+        find_best_threshold(self.road_pr_curve, 'road')
 
     def test_step(self, batch, batch_idx):
         # masks: [B, H, W]
